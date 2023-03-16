@@ -148,7 +148,7 @@ class MapColoringConstraint(Constraint):
             return True
         return assignment[self.place1] != assignment[self.place2]
 
-def getGraphColoringSolution(data, depth_limit):
+def getGraphColoringSolution(data, depth_limit=None):
     data = cleanData(data)
     variables = []
     edges = data[1]
@@ -189,7 +189,7 @@ def main():
                 if solution is None:
                     print("No Solution has been found")
                 else:
-                    print("Edge : Color")
+                    print("Node : Color")
                     for edge in solution:
                         print(edge,":",solution[edge])
 
