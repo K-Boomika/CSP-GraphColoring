@@ -26,6 +26,15 @@ class CSP:
         self.constraints = {}
         for variable in self.variables:
             self.constraints[variable] = []
+        for variable in self.variables:
+            self.domains[variable] = set(self.domains[variable])
+
+        for variable in self.variables:
+            self.constraints[variable] = []
+        self.constraints = {}
+        for variable in self.variables:
+            self.constraints[variable] = []
+            self.domains[variable] = set(self.domains[variable])
 
     def addConstraint(self, constraint):
         for variable in constraint.variables:
@@ -70,51 +79,63 @@ class CSP:
         if len(assignment) == len(self.variables):
             return assignment
 
-        # Use MRV heuristic to select the next variable to assign
         unassigned = [v for v in self.variables if v not in assignment]
-        mrv_variables = sorted(unassigned, key=lambda v: len(self.domains[v]))
+        variable = max(unassigned, key=lambda v: (len(self.constraints[v]), -self.countUnassignedNeighbors(v, sorted(self.domains[v])[0], assignment), len(self.domains[v])))
 
-        # Use LCV heuristic to order the domain values for the selected variable
-        variable = mrv_variables[0]
-        domain_values = self.domains[variable]
-        if len(domain_values) > 1:
-            lcv_values = sorted(domain_values, key=lambda value: self.countUnassignedNeighbors(variable, value, assignment))
-        else:
-            lcv_values = domain_values
-
-        for value in lcv_values:
+        for value in sorted(self.domains[variable], key=lambda val: self.countUnassignedNeighbors(variable, val, assignment)):
             local_assignment = assignment.copy()
+            local_domains = {k: v.copy() for k, v in self.domains.items()}
             local_assignment[variable] = value
             if self.isConsistent(variable, local_assignment):
-                self.domains[variable] = [value]
-                if self.ac3():
+                local_domains[variable] = {value}
+                inferences = self.forwardCheck(variable, value, local_assignment, local_domains)
+                if inferences is not None:
                     result = self.backtrackingSearch(local_assignment, depth_limit)
                     if result is not None:
                         return result
-                self.domains[variable] = domain_values
+                self.reverseInferences(inferences)
         return None
+
+    def forwardCheck(self, variable, value, assignment, domains):
+        inferences = {}
+        for constraint in self.constraints[variable]:
+            other_variable = next((v for v in constraint.variables if v != variable), None)
+            if other_variable is not None and other_variable not in assignment:
+                for other_value in domains[other_variable]:
+                    if not constraint.satisfied({variable: value, other_variable: other_value}):
+                        if len(domains[other_variable]) == 1:
+                            return None
+                        inferences[other_variable] = inferences.get(other_variable, set())
+                        inferences[other_variable].add(other_value)
+                        domains[other_variable] = domains[other_variable] - inferences[other_variable]
+                if not domains[other_variable]:
+                    return None
+        return inferences
+
+    def reverseInferences(self, inferences):
+        for variable, values in inferences.items():
+            self.domains[variable].update(values)
+
+    def countRemainingValues(self, variable):
+        return len(self.domains[variable])
 
     def countUnassignedNeighbors(self, variable, value, assignment):
         count = 0
         for constraint in self.constraints[variable]:
-            if constraint.variables[1] == variable and constraint.variables[0] not in assignment:
-                for val in self.domains[constraint.variables[0]]:
-                    if val != value:
-                        count += 1
-            elif constraint.variables[0] == variable and constraint.variables[1] not in assignment:
-                for val in self.domains[constraint.variables[1]]:
-                    if val != value:
-                        count += 1
+            other_variable = next((v for v in constraint.variables if v != variable), None)
+            if other_variable is not None and other_variable not in assignment and value in self.domains[other_variable]:
+                count += 1
         return count
 
 def cleanData(data):
-    for idx, edge in enumerate(data[1]):
-        if edge[0] == edge[1]:
-            del data[1][idx]
-        mEdge = (edge[1], edge[0])
-        if mEdge in data[1]:
-            del data[1][idx]
+    # Remove edges that connect a node to itself
+    data[1] = [edge for edge in data[1] if edge[0] != edge[1]]
+
+    # Remove duplicate edges
+    data[1] = list(set(tuple(sorted(edge)) for edge in data[1]))
+
     return data
+
 
 class MapColoringConstraint(Constraint):
     def __init__(self, place1, place2):
